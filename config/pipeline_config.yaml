@@ -1,0 +1,26 @@
+# Paths to input files
+paths:
+  phenotype_metadata: "data/phenotype_metadata.csv"
+  prs_metadata: "data/prs_metadata.csv"
+  covariates: "data/covars.csv"
+  prs_file: "data/prs_scores.csv"
+  output_dir: "results/"
+  envs_dir: "envs/"
+
+# Analysis parameters
+thresholds:
+  min_cases: 10
+
+prs:
+  normalize: true
+  normalization_method: "zscore"
+  check_columns: ["ID", "PRS"]  # expected columns in PRS files
+
+prevalence:
+  groups: 10
+  include_intermediates: true
+  normalize: true
+
+covariates:
+  base: "age,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10"
+
