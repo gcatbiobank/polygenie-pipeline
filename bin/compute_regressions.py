@@ -9,7 +9,19 @@ import csv
 
 
 def normalize_prs(df):
-    """Normalize PRS as z-score."""
+    """
+    Normalize Polygenic Risk Score (PRS) values by converting them to z-scores.
+    
+    Parameters:
+        df (pandas.DataFrame): DataFrame containing a 'PRS' column to normalize
+        
+    Returns:
+        pandas.DataFrame: Copy of input DataFrame with normalized PRS values
+        
+    Note:
+        Z-score normalization: (x - mean) / standard_deviation
+        Uses sample standard deviation (ddof=1)
+    """
     df = df.copy()
     df['PRS'] = (df['PRS'] - df['PRS'].mean()) / df['PRS'].std(ddof=1)
     return df
@@ -17,7 +29,23 @@ def normalize_prs(df):
 
 def assign_prs_groups(df, n_groups=10, include_intermediates=False):
     """
-    Create a binary PRS group: 1 for top group, 0 for reference (bottom or rest).
+    Categorize individuals into binary PRS groups based on their PRS scores.
+    
+    Parameters:
+        df (pandas.DataFrame): DataFrame containing PRS values
+        n_groups (int, optional): Number of quantile groups to create (default=10 for deciles)
+        include_intermediates (bool, optional): If True, compares top group vs all others.
+                                              If False, compares top vs bottom group only.
+    
+    Returns:
+        pandas.DataFrame: DataFrame with added columns:
+            - PRS_group_raw: Original quantile group numbers
+            - PRS_group: Binary classification (1=top group, 0=reference group)
+            
+    Note:
+        - Handles duplicate values in quantile calculation
+        - Drops rows where group assignment results in NaN
+        - Returns only samples in the comparison groups
     """
     df = df.copy()
     df['PRS_group_raw'] = pd.qcut(df['PRS'], n_groups, labels=False, duplicates='drop')
@@ -37,7 +65,33 @@ def assign_prs_groups(df, n_groups=10, include_intermediates=False):
 
 
 def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, include_intermediates):
-    """Run linear or logistic regression for one phenotype."""
+    """
+    Perform regression analysis between PRS groups and a phenotype, adjusting for covariates.
+    
+    Parameters:
+        merged_df (pandas.DataFrame): DataFrame containing PRS, phenotype and covariate data
+        prs_name (str): Name identifier for the PRS being analyzed
+        var (str): Name of the phenotype variable column
+        p_type (str): Type of phenotype - 'binary' for logistic regression, else linear regression
+        covariates (list): List of covariate column names to include in the model
+        n_groups (int): Number of quantile groups for PRS categorization
+        include_intermediates (bool): Whether to include intermediate groups in reference category
+        
+    Returns:
+        dict or None: Dictionary containing regression results if successful:
+            - PRS_name: Name of the PRS
+            - phenotype: Name of the phenotype
+            - coef: Regression coefficient for PRS_group
+            - pvalue: P-value for PRS_group coefficient
+            - n_groups: Number of groups used
+            - include_intermediates: Whether intermediates were included
+            Returns None if regression fails or PRS_group term is missing
+            
+    Note:
+        - Uses statsmodels for regression (logit for binary, ols for continuous)
+        - Automatically drops missing values in phenotype and PRS
+        - Handles errors gracefully and reports them to stdout
+    """
     merged_df = merged_df.dropna(subset=[var, 'PRS'])
 
     # Assign PRS groups
@@ -71,6 +125,33 @@ def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, inclu
 
 
 def process_pheno(pheno, prs_df, base_covariates, args):
+    """
+    Process a single phenotype for PRS regression analysis.
+    
+    Parameters:
+        pheno (pandas.Series): Row from phenotype metadata containing:
+            - Variable: Name of the phenotype variable
+            - Type: Phenotype type ('binary' or continuous)
+            - Sex: Sex specificity ('male', 'female', or 'both')
+            - full_path: Path to phenotype data file
+            - Covariates: Optional additional covariates (comma-separated)
+        prs_df (pandas.DataFrame): DataFrame containing PRS scores and base covariates
+        base_covariates (list): List of base covariate names to include in all analyses
+        args (argparse.Namespace): Command line arguments including:
+            - prs_name: Name of the PRS
+            - normalize: Whether to normalize PRS
+            - n_groups: Number of PRS groups
+            - include_intermediates: Whether to include intermediate groups
+            
+    Returns:
+        dict or None: Results from run_regression() if successful, None if failed
+        
+    Note:
+        - Handles sex-specific analyses by filtering data appropriately
+        - Merges PRS data with phenotype data
+        - Supports additional covariates specified in phenotype metadata
+        - Optionally normalizes PRS before analysis
+    """
     var = pheno['Variable']
     p_type = pheno['Type'].lower()
     pheno_sex = pheno.get('Sex', 'both')
@@ -84,7 +165,14 @@ def process_pheno(pheno, prs_df, base_covariates, args):
 
     covariates = base_covariates + extra_covariates
 
-    pheno_data = pd.read_csv(pheno_file, sep=';', engine='python')
+    # Use a global cache for phenotype files
+    if not hasattr(process_pheno, "pheno_file_cache"):
+        process_pheno.pheno_file_cache = {}
+    pheno_file_cache = process_pheno.pheno_file_cache
+
+    if pheno_file not in pheno_file_cache:
+        pheno_file_cache[pheno_file] = pd.read_csv(pheno_file, sep=';', engine='python')
+    pheno_data = pheno_file_cache[pheno_file]
 
     merged_df = prs_df.copy()
     merged_df = pd.merge(merged_df, pheno_data[['ID', var]], on='ID', how='inner')
@@ -107,6 +195,36 @@ def process_pheno(pheno, prs_df, base_covariates, args):
 
 
 def main():
+    """
+    Main function for the PRS regression analysis pipeline.
+    
+    This function:
+        1. Parses command line arguments for analysis configuration
+        2. Loads required data files:
+           - PRS scores
+           - Phenotype metadata
+           - Covariate data
+           - PRS metadata
+        3. Handles sex-specific PRS filtering
+        4. Processes each phenotype in parallel (if specified)
+        5. Collates results and writes to CSV file
+        
+    The output filename includes the number of groups and whether
+    intermediate groups were included in the analysis.
+    
+    Command line arguments handled:
+        --prs-file: Path to PRS data file
+        --prs-name: Name identifier for the PRS
+        --prs-metadata: Path to PRS metadata file
+        --phenotype-metadata: Path to phenotype metadata file
+        --covariates: Path to covariate data file
+        --base-covariates: List of base covariates to include
+        --output: Output file path
+        --n-groups: Number of PRS groups (default=10)
+        --normalize: Whether to normalize PRS
+        --include-intermediates: Whether to include intermediate groups
+        --n-jobs: Number of parallel jobs (default=1)
+    """
     parser = argparse.ArgumentParser(description="Compute PRS regressions by percentile group")
     parser.add_argument("--prs-file", required=True, help="PRS file (ID, PRS)")
     parser.add_argument("--prs-name", required=True, help="PRS short name")
@@ -123,6 +241,10 @@ def main():
                         help="Use rest (all but top) as reference instead of only bottom group")
     parser.add_argument("--n-jobs", type=int, default=1, help="Parallel jobs")
     args = parser.parse_args()
+    print("===== PRS Regression Analysis Parameters =====")
+    for arg, value in vars(args).items():
+        print(f"{arg}: {value}")
+    print("==============================================")
 
     # Load data
     prs_df = pd.read_csv(args.prs_file, sep='\t', engine='python', quotechar='"')

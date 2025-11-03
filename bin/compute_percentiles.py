@@ -51,20 +51,26 @@ def compute_percentiles(prs_df, phenotypes, n_percentiles=100, prs_sex=None, nor
     if prs_sex in ['male','female']:
         prs_df = prs_df[prs_df['sex'] == prs_sex]
 
+    # Cache loaded phenotype files by path
+    pheno_file_cache = {}
+
     # Loop over phenotypes
     for _, pheno in phenotypes.iterrows():
         var = pheno['Variable']
         p_type = pheno['Type'].lower()
         pheno_sex = pheno['Sex']
-        pheno_file = pheno['full_path']
-        pheno_file = pd.read_csv(pheno_file, sep=';')
+        pheno_file_path = pheno['full_path']
+        # Load and cache phenotype file if not already loaded
+        if pheno_file_path not in pheno_file_cache:
+            pheno_file_cache[pheno_file_path] = pd.read_csv(pheno_file_path, sep=';')
+        pheno_file_df = pheno_file_cache[pheno_file_path]
 
         # Filter for phenotype sex if needed
         pheno_df = prs_df.copy()
         if pheno_sex in ['male','female']:
             pheno_df = pheno_df[pheno_df['sex'] == pheno_sex]
         
-        pheno_df = pd.merge(pheno_df, pheno_file[['ID', var]])
+        pheno_df = pd.merge(pheno_df, pheno_file_df[['ID', var]])
 
         # Normalize if requested
         if normalize:

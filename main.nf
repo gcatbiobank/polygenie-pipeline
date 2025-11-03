@@ -20,6 +20,8 @@ if (!configFile.exists()) {
 }
 
 def yaml = new Yaml().load(configFile.text)
+println "DEBUG YAML regression_runs type: ${yaml.regression_runs?.getClass()?.name}"
+println "DEBUG YAML regression_runs content: ${yaml.regression_runs}"
 
 // Merge YAML sections into params
 params.paths         = yaml.paths
@@ -27,6 +29,8 @@ params.thresholds    = yaml.thresholds
 params.prs           = yaml.prs
 params.prevalence    = yaml.prevalence
 params.covariates    = yaml.covariates
+params.regression_runs = yaml.regression_runs
+params.percentile_plot = yaml.percentile_plot
 
 // 🧬 Print pipeline header
 def now = new Date().format("yyyy-MM-dd HH:mm:ss")
@@ -182,8 +186,8 @@ workflow {
     //    }
 
     
-    
-        // Step 3: Build channel for percentiles computation
+    /*
+    // Step 3: Build channel for percentiles computation
     prs_checked.prs_present
         .splitCsv(header: true, sep: ';')
         .map { row ->
@@ -195,29 +199,116 @@ workflow {
             def prs_metadata = file("${workflow.projectDir}/results/preprocessing/prs_present.csv")
             def phenotype_file = file("${workflow.projectDir}/results/preprocessing/phenotypes_valid.csv")
             def covariates_file = file("${workflow.projectDir}/${params.paths.covariates}")
-            def percentiles = params.prevalence?.groups
-
-            // 🔍 Debug print — show what's being emitted
-            /*println """
-            DEBUG:
-            name            = ${prs_name}
-            full_path       = ${full_path}
-            prs_file exists = ${prs_file?.exists()}
-            phenotype_file  = ${phenotype_file}
-            covariates_file = ${covariates_file}
-            percentiles     = ${percentiles}
-            """.stripIndent()
-            */
-
-            // Return the tuple (will throw if any are null)
-            tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file, percentiles)
+                def percentiles = params.percentile_plot?.groups ?: 10
+                def normalize = params.percentile_plot?.normalize ?: true
+                tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file, percentiles, normalize)
         }
-        // Optional: also inspect what the channel actually emits
-        //.view { "EMITTING: ${it}" }
+        // Debug: inspect what the channel actually emits
+        .view { println "PRS tuple: ${it}" }
         .set { prs_for_percentiles }
 
+        // Run percentile plots (one per PRS)
+        prs_for_percentiles.map { prs_file, prs_metadata, prs_name, phenotype_file, covariates_file, percentiles, normalize ->
+            def debug_tuple = tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file, percentiles, normalize)
+            println "Percentile tuple: ${debug_tuple}"
+            debug_tuple
+        }
+        .set { percentiles_input_ch }
+        COMPUTE_PRS_PERCENTILES(percentiles_input_ch)
+    
+    // Run regressions (multiple parameter sets per PRS)
+    println "DEBUG → prs_checked class: ${prs_checked.getClass().name}"
+    println "DEBUG → prs_checked.prs_present: ${prs_checked.prs_present}"
+    prs_checked.prs_present
+        .splitCsv(header: true, sep: ';')
+        .map { row ->
+            def prs_name = row['"name"']?.replaceAll('"', '')
+            def full_path = row['"full_path"']?.replaceAll('"', '')
+            def prs_file = full_path ? file(full_path) : null
+            def prs_metadata = file("${workflow.projectDir}/results/preprocessing/prs_present.csv")
+            def phenotype_file = file("${workflow.projectDir}/results/preprocessing/phenotypes_valid.csv")
+            def covariates_file = file("${workflow.projectDir}/${params.paths.covariates}")
+            tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file)
+        }
+        .view { "🧩 PRS tuple emitted: ${it}" }
+        .cross(Channel.fromList(params.regression_runs ?: []))
+        .map { prs_tuple, reg_params ->
+            def (prs_file, prs_metadata, prs_name, phenotype_file, covariates_file) = prs_tuple
+            tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file,
+                reg_params.groups ?: 10,
+                reg_params.include_intermediates ?: false,
+                reg_params.normalize ?: true,
+                reg_params.label ?: "regression")
+        }
+        .view { "⚙️ Regression input tuple: ${it}" }
+        .set { regressions_input_ch }
+    COMPUTE_PRS_REGRESSIONS(regressions_input_ch)
+    */
+
+    // Step 3: Build channel for percentiles computation
+    def prs_for_percentiles = prs_checked.prs_present
+        .flatMap { csv_text ->
+            csv_text.splitCsv(header: true, sep: ';')
+        }
+        .map { row ->
+            def prs_name = row['"name"']?.replaceAll('"', '')
+            def full_path = row['"full_path"']?.replaceAll('"', '')
+
+            def prs_file = full_path ? file(full_path) : null
+            def prs_metadata = file("${workflow.projectDir}/results/preprocessing/prs_present.csv")
+            def phenotype_file = file("${workflow.projectDir}/results/preprocessing/phenotypes_valid.csv")
+            def covariates_file = file("${workflow.projectDir}/${params.paths.covariates}")
+            
+            // Percentiles settings with defaults
+            def percentiles = params.percentile_plot?.groups ?: 10
+            def normalize = params.percentile_plot?.normalize ?: true
+
+            tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file, percentiles, normalize)
+        }
+        .set { prs_for_percentiles }
+
+    // Optional: debug view
+    prs_for_percentiles.view { "🟢 PRS tuple for percentiles: ${it}" }
+
+    // Run percentile plots (one per PRS)
     COMPUTE_PRS_PERCENTILES(prs_for_percentiles)
 
+    // Convert regression_runs ArrayList into a proper channel emitting each map individually
+    // Step 1: make prs_checked.prs_present a normal unicast channel
+    def regression_runs = params.regression_runs ?: []
+    def regression_runs_ch = Channel.fromList(regression_runs)
 
-    COMPUTE_PRS_REGRESSIONS(prs_for_percentiles)
+    // make a simple channel of PRS tuples (one per row)
+    def prs_rows_ch = prs_checked.prs_present
+        .flatMap { csv_text -> csv_text.splitCsv(header:true, sep:';') }
+        .map { row ->
+            def prs_name = row['"name"']?.replaceAll('"','')
+            def full_path = row['"full_path"']?.replaceAll('"','')
+            def prs_file = full_path ? file(full_path) : null
+            def prs_metadata = file("${workflow.projectDir}/results/preprocessing/prs_present.csv")
+            def phenotype_file = file("${workflow.projectDir}/results/preprocessing/phenotypes_valid.csv")
+            def covariates_file = file("${workflow.projectDir}/${params.paths.covariates}")
+            tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file)
+        }
+
+    // combine each PRS tuple with every regression run config
+    def regressions_input_ch = prs_rows_ch
+        .flatMap { prs_tuple ->
+            regression_runs.collect { reg_params ->
+                def (prs_file, prs_metadata, prs_name, phenotype_file, covariates_file) = prs_tuple
+                tuple(
+                    prs_file, prs_metadata, prs_name,
+                    phenotype_file, covariates_file,
+                    reg_params.groups ?: 10,
+                    reg_params.include_intermediates ?: false,
+                    reg_params.normalize ?: true,
+                    reg_params.label ?: "regression"
+                )
+            }
+        }
+
+    // -------------------------------
+    // Step 4. Run regressions
+    // -------------------------------
+    COMPUTE_PRS_REGRESSIONS(regressions_input_ch)
 }

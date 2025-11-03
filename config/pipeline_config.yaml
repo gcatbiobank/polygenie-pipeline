@@ -21,6 +21,44 @@ prevalence:
   include_intermediates: true
   normalize: true
 
+# Percentile plot settings (for COMPUTE_PRS_PERCENTILES)
+percentile_plot:
+  groups: 10           # e.g. 10 for deciles
+  normalize: true      # whether to normalize PRS for plots
+
+# Regression run settings (for COMPUTE_PRS_REGRESSIONS)
+# List of parameter sets to run multiple regression jobs per PRS
+regression_runs:
+  - groups: 10
+    include_intermediates: false
+    normalize: true
+    label: "deciles_no_intermediate"
+  - groups: 10
+    include_intermediates: true
+    normalize: true
+    label: "deciles_with_intermediate"
+  - groups: 4
+    include_intermediates: false
+    normalize: true
+    label: "quartiles_no_intermediate"
+  - groups: 4
+    include_intermediates: true
+    normalize: true
+    label: "quartiles_with_intermediate"
+
 covariates:
   base: "age,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10"
+
+# SGE cluster parameters (used when running with -profile sge)
+sge:
+  queue: "all.q"            # SGE queue name (e.g., all.q, short.q)
+  parallel_env: "smp"       # SGE parallel environment name (e.g., smp, threaded)
+  walltime: "04:00:00"      # Default walltime (hh:mm:ss)
+
+# GPU SGE parameters (used when running with -profile gpu)
+gpu:
+  queue: "gpu.q"            # SGE GPU queue name
+  parallel_env: "smp"       # SGE parallel environment name
+  walltime: "04:00:00"      # Default walltime (hh:mm:ss)
+  gpu: 1                    # Number of GPUs to request per job
 
