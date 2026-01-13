@@ -244,7 +244,7 @@ workflow {
         .set { regressions_input_ch }
     COMPUTE_PRS_REGRESSIONS(regressions_input_ch)
     */
-
+    /*
     // Step 3: Build channel for percentiles computation
     def prs_for_percentiles = prs_checked.prs_present
         .flatMap { csv_text ->
@@ -267,12 +267,9 @@ workflow {
         }
         .set { prs_for_percentiles }
 
-    // Optional: debug view
-    prs_for_percentiles.view { "🟢 PRS tuple for percentiles: ${it}" }
-
     // Run percentile plots (one per PRS)
     COMPUTE_PRS_PERCENTILES(prs_for_percentiles)
-
+    */
     // Convert regression_runs ArrayList into a proper channel emitting each map individually
     // Step 1: make prs_checked.prs_present a normal unicast channel
     def regression_runs = params.regression_runs ?: []

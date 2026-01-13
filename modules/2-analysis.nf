@@ -43,6 +43,11 @@ process COMPUTE_PRS_REGRESSIONS {
     path "*.csv", emit: prs_regressions
     path "*.log", emit: prs_regressions_log
 
+    when:
+    // Skip if output CSV already exists in target output directory
+    !file("${params.paths.output_dir}/regressions/${prs_name}_regression_${label}_${n_groups}groups_${include_intermediates ? 'withInter' : 'noInter'}.csv").exists()
+
+
     script:
     def include_inter_flag = include_intermediates ? "--include-intermediates" : ""
     def normalize_flag = normalize ? "--normalize" : ""
@@ -51,6 +56,7 @@ process COMPUTE_PRS_REGRESSIONS {
     def inter_label = include_intermediates ? "withInter" : "noInter"
     def out_file = "${prs_name}_regression_${label}_${n_groups}groups_${inter_label}.csv"
     def log_file = "${prs_name}_regression_${label}_${n_groups}groups_${inter_label}.log"
+    def out_path = "${params.paths.output_dir}/regressions"
     """
     python ${file("bin/compute_regressions.py")} \
         --prs-file ${prs_file} \
@@ -63,6 +69,7 @@ process COMPUTE_PRS_REGRESSIONS {
         ${normalize_flag} \
         ${include_inter_flag} \
         --output ${out_file} \
+        --out-path ${out_path} \
         --n-jobs ${task.cpus} \
         > ${log_file} 2>&1
     """

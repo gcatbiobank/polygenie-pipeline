@@ -138,3 +138,55 @@ nextflow run main.nf -profile sge -resume
 All parameter sets will be run automatically and in parallel where possible.
 
 See the rest of this README for standard usage, input file formats, and pipeline options.
+
+---
+
+## Deployment (production folder and launching the app) 🔧
+
+We provide a helper script to prepare a production folder with the minimal files the Dash app needs.
+
+1) Copy files to a production folder (example: /srv/polygenie). From repo root run:
+
+```bash
+# Default destination (/srv/polygenie) - use sudo if you need privileges
+scripts/prepare_prod.sh /srv/polygenie
+
+# Optionally create a venv and install requirements (if you have requirements.txt):
+scripts/prepare_prod.sh /srv/polygenie --venv
+
+# Optionally run ingestion right after copying (safe; loader is idempotent and uses upserts):
+scripts/prepare_prod.sh /srv/polygenie --ingest
+```
+
+2) Populate the database (if you did not use --ingest):
+
+```bash
+cd /srv/polygenie
+python3 db/ingest_phenotypes.py   # populate target table
+python3 db/db_loader.py           # ingest regression runs, percentiles, prs_manifest, gwas_metadata
+```
+
+Notes:
+- The loader is idempotent and uses INSERT OR REPLACE, so re-running is safe and will update changed rows.
+- The app expects the DB under `sqlitedb/polygenie.db`. The prepare script will create a symlink `sqlitedb/polygenie.db` -> `../db/polygenie.db` if the DB file exists.
+
+3) Quick dev run (verify the server starts):
+
+```bash
+# From /srv/polygenie
+python3 -c "from app.app import app; app.run_server(debug=False, host='0.0.0.0', port=8050)"
+# Open http://localhost:8050
+```
+
+4) Production run suggestion (Gunicorn + systemd + nginx)
+
+```bash
+# example: run gunicorn
+pip install gunicorn
+gunicorn "app.app:server" -b 127.0.0.1:8050 -w 4 --preload
+
+# create a systemd unit (see earlier README notes) and proxy with nginx for TLS and robustness.
+```
+
+If you'd like, I can also generate a sample systemd unit and nginx config and/or a Dockerfile + docker-compose for an all-in-one deploy.
+

@@ -118,6 +118,13 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
+    # -----------------------------------------------------------------
+    # SKIP IF OUTPUT ALREADY EXISTS
+    # -----------------------------------------------------------------
+    if os.path.exists(args.output) and os.path.getsize(args.output) > 0:
+        print(f"✅ Skipping {args.prs_name}: output already exists → {args.output}")
+        exit(0)
+
     # Load files
     prs_df = pd.read_csv(args.prs_file, sep='\t', engine='python', quotechar='"') ## TODO improve parsing
     prs_meta = pd.read_csv(args.prs_metadata, sep=';', engine='python', quotechar='"')

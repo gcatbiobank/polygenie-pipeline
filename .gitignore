@@ -1,0 +1,75 @@
+# -------------------------------
+# Core project structure
+# -------------------------------
+# Ignore Nextflow work dirs and results
+work/
+results/
+output/
+outputs/
+scratch/
+temp/
+tmp/
+
+# Nextflow run files
+*.nextflow*
+!.nextflow.config       # keep your config files
+*.trace
+*.timeline.html
+*.report.html
+*.dag.png
+*.dot
+
+# Conda / environment
+.env/
+.conda/
+*.yml~
+*.yaml~
+.envrc
+envs/
+*.lock
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg/
+build/
+dist/
+
+# Logs
+*.log
+logs/
+log/
+.nextflow.log
+nohup.out
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb~
+
+# Editor / system files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Hidden files created by runs
+*.bak
+*.tmp
+*~
+# -------------------------------
+# Keep key project items
+# -------------------------------
+!bin/
+!conf/
+!*.py
+!*.nf
+!*.yml
+!*.yaml
+!README.md
+!LICENSE
+!.gitignore

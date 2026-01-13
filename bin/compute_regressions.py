@@ -6,6 +6,14 @@ import statsmodels.formula.api as smf
 from joblib import Parallel, delayed
 import os
 import csv
+import sys
+from collections import Counter
+import warnings
+from statsmodels.tools.sm_exceptions import ConvergenceWarning, PerfectSeparationWarning
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", category=PerfectSeparationWarning)
 
 
 def normalize_prs(df):
@@ -64,7 +72,7 @@ def assign_prs_groups(df, n_groups=10, include_intermediates=False):
     return df
 
 
-def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, include_intermediates):
+def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, include_intermediates, sex_filter='both'):
     """
     Perform regression analysis between PRS groups and a phenotype, adjusting for covariates.
     
@@ -76,31 +84,58 @@ def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, inclu
         covariates (list): List of covariate column names to include in the model
         n_groups (int): Number of quantile groups for PRS categorization
         include_intermediates (bool): Whether to include intermediate groups in reference category
+        sex_filter (str): 'male', 'female', or 'both', for record-keeping
         
     Returns:
-        dict or None: Dictionary containing regression results if successful:
-            - PRS_name: Name of the PRS
-            - phenotype: Name of the phenotype
-            - coef: Regression coefficient for PRS_group
-            - pvalue: P-value for PRS_group coefficient
-            - n_groups: Number of groups used
-            - include_intermediates: Whether intermediates were included
-            Returns None if regression fails or PRS_group term is missing
-            
-    Note:
-        - Uses statsmodels for regression (logit for binary, ols for continuous)
-        - Automatically drops missing values in phenotype and PRS
-        - Handles errors gracefully and reports them to stdout
+        dict or None: Dictionary containing regression results if successful, None otherwise.
+                      Includes:
+                      - PRS_name
+                      - phenotype
+                      - beta / coef
+                      - OR (if binary)
+                      - SE
+                      - CI_lower / CI_upper
+                      - pvalue
+                      - n (samples)
+                      - n_groups
+                      - include_intermediates
+                      - covariates
+                      - formula
+                      - sex_filter
     """
+    # Drop missing PRS or phenotype
     merged_df = merged_df.dropna(subset=[var, 'PRS'])
+    n_samples = len(merged_df)
+    
+    if n_samples == 0:
+        print(f"No samples available for phenotype {var}")
+        return None
 
     # Assign PRS groups
     merged_df = assign_prs_groups(merged_df, n_groups, include_intermediates)
+    n_groups_survive = len(merged_df)
+
+    print(
+        f"[PRS][GROUP] {var:40s} "
+        f"n={n_groups_survive:7d} "
+        f"groups={n_groups} "
+        f"include_intermediates={include_intermediates}"
+    )
+
+    if n_groups_survive == 0:
+        print(f"[PRS][DROP] {var} removed: no samples in comparison groups")
+        return None
+    
+    # Drop if PRS_group is empty
+    if merged_df['PRS_group'].isna().all():
+        print(f"No valid PRS_group assignments for phenotype {var}")
+        return None
 
     # Build formula
     formula = f"{var} ~ PRS_group + " + " + ".join(covariates)
 
     try:
+        # Choose model
         if p_type == 'binary':
             model = smf.logit(formula=formula, data=merged_df)
         else:
@@ -108,17 +143,38 @@ def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, inclu
 
         fit = model.fit(disp=False)
 
-        if 'PRS_group' in fit.params.index:
-            return {
-                'PRS_name': prs_name,
-                'phenotype': var,
-                'coef': fit.params['PRS_group'],
-                'pvalue': fit.pvalues['PRS_group'],
-                'n_groups': n_groups,
-                'include_intermediates': include_intermediates
-            }
-        else:
+        if 'PRS_group' not in fit.params.index:
             return None
+
+        # Extract coefficients
+        coef = fit.params['PRS_group']
+        se = fit.bse['PRS_group']
+        ci_lower, ci_upper = fit.conf_int().loc['PRS_group']
+
+        result = {
+            'PRS_name': prs_name,
+            'phenotype': var,
+            'coef': coef,
+            'SE': se,
+            'CI_lower': ci_lower,
+            'CI_upper': ci_upper,
+            'pvalue': fit.pvalues['PRS_group'],
+            'n': n_samples,
+            'n_groups': n_groups,
+            'include_intermediates': include_intermediates,
+            'covariates': ','.join(covariates),
+            'formula': formula,
+            'sex_filter': sex_filter
+        }
+
+        # Add OR for binary traits
+        if p_type == 'binary':
+            result['OR'] = np.exp(coef)
+            result['OR_CI_lower'] = np.exp(ci_lower)
+            result['OR_CI_upper'] = np.exp(ci_upper)
+
+        return result
+
     except Exception as e:
         print(f"Error running regression for {var}: {e}")
         return None
@@ -175,7 +231,27 @@ def process_pheno(pheno, prs_df, base_covariates, args):
     pheno_data = pheno_file_cache[pheno_file]
 
     merged_df = prs_df.copy()
-    merged_df = pd.merge(merged_df, pheno_data[['ID', var]], on='ID', how='inner')
+    n_prs = len(merged_df)
+
+    try:
+        merged_df = pd.merge(merged_df, pheno_data[['ID', var]], on='ID', how='inner')
+    except KeyError as e:
+        print(f"[PHENO][MISSING] {var} not found in {pheno_file} → {e}")
+        return None
+
+    n_after = len(merged_df)
+
+    print(
+        f"[PHENO][MERGE] var={var:40s} "
+        f"type={p_type:10s} "
+        f"sex={pheno_sex:6s} "
+        f"file={os.path.basename(pheno_file):25s} "
+        f"PRS={n_prs:7d} → merged={n_after:7d}"
+    )
+
+    if n_after == 0:
+        print(f"[PHENO][DROP] {var} removed: no overlapping IDs")
+        return None
 
     if pheno_sex in ['male', 'female'] and 'sex' in merged_df.columns:
         merged_df = merged_df[merged_df['sex'] == pheno_sex]
@@ -190,7 +266,8 @@ def process_pheno(pheno, prs_df, base_covariates, args):
         p_type,
         covariates,
         args.n_groups,
-        args.include_intermediates
+        args.include_intermediates,
+        sex_filter=pheno_sex
     )
 
 
@@ -235,6 +312,7 @@ def main():
     parser.add_argument("--base-covariates", required=True,
                         help="Comma-separated list of base covariates (e.g. 'CURRENT_AGE,GENDER,PC1,PC2,PC3')")
     parser.add_argument("--output", required=True, help="Output CSV file")
+    parser.add_argument("--out-path", required=True, help="Output directory path")
     parser.add_argument("--n-groups", type=int, default=10, help="Number of PRS groups (e.g. 10 for deciles)")
     parser.add_argument("--normalize", action='store_true', help="Normalize PRS before grouping")
     parser.add_argument("--include-intermediates", action='store_true',
@@ -245,6 +323,18 @@ def main():
     for arg, value in vars(args).items():
         print(f"{arg}: {value}")
     print("==============================================")
+
+    # -----------------------------------------------------------------
+    # SKIP IF OUTPUT ALREADY EXISTS
+    # -----------------------------------------------------------------
+
+    
+    
+    out_file = os.path.join(args.out_path, f"/{args.output}")
+
+    # debug print (helpful when running under Nextflow)
+    print(f"[DEBUG] Final output path: {out_file}")
+
 
     # Load data
     prs_df = pd.read_csv(args.prs_file, sep='\t', engine='python', quotechar='"')
@@ -272,13 +362,20 @@ def main():
 
     # Filter valid results
     results = [r for r in results if r is not None]
+    
+    binary = sum(1 for r in results if 'OR' in r)
+    continuous = sum(1 for r in results if 'OR' not in r)
+
+    print("\n================ PHEWAS SUMMARY ================")
+    print(f"Binary (logistic) traits:     {binary}")
+    print(f"Continuous (linear) traits:  {continuous}")
+    print(f"Total regressions:           {len(results)}")
+    print("===============================================\n")
 
     if results:
         df_out = pd.DataFrame(results)
-        suffix = f"{args.n_groups}groups_{'withInter' if args.include_intermediates else 'noInter'}"
-        out_file = os.path.splitext(args.output)[0] + f"_{suffix}.csv"
-        df_out.to_csv(out_file, sep=';', index=False, quoting=csv.QUOTE_ALL)
-        print(f"✅ Results written to {out_file}")
+        df_out.to_csv(args.output, sep=';', index=False, quoting=csv.QUOTE_ALL)
+        print(f"✅ Results written to {args.output}")
     else:
         print("⚠️ No valid results generated.")
 
