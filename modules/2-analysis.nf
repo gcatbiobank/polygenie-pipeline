@@ -5,7 +5,6 @@ process COMPUTE_PRS_PERCENTILES {
     tag "${prs_name}"
     publishDir "${params.paths.output_dir}/percentiles", mode: 'copy', pattern: "*.csv"
     publishDir "${params.paths.output_dir}/log", mode: 'copy', pattern: "*.log"
-    conda "${params.paths.envs_dir}/polygenie-pipeline.yml"
 
     input:
     tuple path(prs_file), path(prs_metadata), val(prs_name), path(phenotype_file), path(covariates_file), val(percentiles), val(normalize)
@@ -17,7 +16,7 @@ process COMPUTE_PRS_PERCENTILES {
     script:
     def normalize_flag = normalize ? "--normalize" : ""
     """
-    python ${file("bin/compute_percentiles.py")} \
+    python ${file("scripts/modules/compute_percentiles.py")} \
         --prs-file ${prs_file} \
         --prs-name ${prs_name} \
         --prs-metadata ${prs_metadata} \
@@ -34,7 +33,6 @@ process COMPUTE_PRS_REGRESSIONS {
     tag "${prs_name}"
     publishDir "${params.paths.output_dir}/regressions", mode: 'copy', pattern: "*.csv"
     publishDir "${params.paths.output_dir}/log", mode: 'copy', pattern: "*.log"
-    conda "${params.paths.envs_dir}/polygenie-pipeline.yml"
 
     input:
     tuple path(prs_file), path(prs_metadata), val(prs_name), path(phenotype_file), path(covariates_file), val(n_groups), val(include_intermediates), val(normalize), val(label)
@@ -58,7 +56,7 @@ process COMPUTE_PRS_REGRESSIONS {
     def log_file = "${prs_name}_regression_${label}_${n_groups}groups_${inter_label}.log"
     def out_path = "${params.paths.output_dir}/regressions"
     """
-    python ${file("bin/compute_regressions.py")} \
+    python ${file("scripts/modules/compute_regressions.py")} \
         --prs-file ${prs_file} \
         --prs-name ${prs_name} \
         --prs-metadata ${prs_metadata} \

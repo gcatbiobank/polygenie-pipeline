@@ -132,7 +132,8 @@ def run_regression(merged_df, prs_name, var, p_type, covariates, n_groups, inclu
         return None
 
     # Build formula
-    formula = f"{var} ~ PRS_group + " + " + ".join(covariates)
+    safe_var = f'Q("{var}")'
+    formula = safe_var + ' ~ PRS_group + ' + " + ".join(covariates)
 
     try:
         # Choose model

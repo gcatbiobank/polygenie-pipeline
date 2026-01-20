@@ -28,18 +28,35 @@ import argparse
 import pandas as pd
 import numpy as np
 
-def normalize_prs(df):
-    """Compute aggregated and sex-stratified z-score PRS."""
+def normalize_prs(df, pheno_sex):
+    """Compute aggregated, male, and female z-score PRS."""
     df = df.copy()
-    # Aggregate z-score
-    df['PRS_agg'] = (df['PRS'] - df['PRS'].mean()) / df['PRS'].std(ddof=1)
-    # Sex-stratified z-score (safe version)
-    if 'sex' in df.columns:
-        df['PRS_sex'] = df.groupby('sex')['PRS'].transform(
-            lambda x: (x - x.mean()) / x.std(ddof=1)
-        )
+    if pheno_sex in ['male','female']:
+        df[f'PRS_{pheno_sex}'] = (df['PRS'] - df['PRS'].mean()) / df['PRS'].std(ddof=1)
     else:
-        df['PRS_sex'] = df['PRS_agg']
+        # Global PRS
+        df['PRS_agg'] = (df['PRS'] - df['PRS'].mean()) / df['PRS'].std(ddof=1)
+
+        # Default fallbacks
+        df['PRS_male'] = df['PRS_agg']
+        df['PRS_female'] = df['PRS_agg']
+
+        if 'sex' in df.columns:
+            male_mask   = df['sex'].str.lower() == 'male'
+            female_mask = df['sex'].str.lower() == 'female'
+
+            if male_mask.any():
+                df.loc[male_mask, 'PRS_male'] = (
+                    (df.loc[male_mask, 'PRS'] - df.loc[male_mask, 'PRS'].mean())
+                    / df.loc[male_mask, 'PRS'].std(ddof=1)
+                )
+
+            if female_mask.any():
+                df.loc[female_mask, 'PRS_female'] = (
+                    (df.loc[female_mask, 'PRS'] - df.loc[female_mask, 'PRS'].mean())
+                    / df.loc[female_mask, 'PRS'].std(ddof=1)
+                )
+
     return df
 
 def compute_percentiles(prs_df, phenotypes, n_percentiles=100, prs_sex=None, normalize=True):
@@ -74,36 +91,57 @@ def compute_percentiles(prs_df, phenotypes, n_percentiles=100, prs_sex=None, nor
 
         # Normalize if requested
         if normalize:
-            pheno_df = normalize_prs(pheno_df)
+            pheno_df = normalize_prs(pheno_df, pheno_sex)
         else:
             pheno_df['PRS_agg'] = pheno_df['PRS']
-            pheno_df['PRS_sex'] = pheno_df['PRS']
+            pheno_df['PRS_male'] = pheno_df['PRS']
+            pheno_df['PRS_female'] = pheno_df['PRS']
+
+        # Choose correct PRS column
+        if pheno_sex == 'male':
+            prs_col = ['PRS_male']
+        elif pheno_sex == 'female':
+            prs_col = ['PRS_female']
+        else:
+            prs_col = ['PRS_agg', 'PRS_female', 'PRS_male']
         
-        # Percentile columns
-        for col in ['PRS_agg', 'PRS_sex']:
-            pheno_df[f'percentile_{col}'] = pd.qcut(pheno_df[col], n_percentiles, labels=False, duplicates='drop')
+        for prs_var in prs_col:
+            if prs_var == 'PRS_female':
+                tmp = pheno_df[pheno_df['sex'] == 'female']
+            elif prs_var == 'PRS_male':
+                tmp = pheno_df[pheno_df['sex'] == 'male']        
+            else:
+                tmp = pheno_df
+            
+            # Compute percentiles
+            tmp['percentile'] = pd.qcut(
+                tmp[prs_var],
+                n_percentiles,
+                labels=False,
+                duplicates='drop'
+            )
 
-        if var not in pheno_df.columns:
-            continue  # skip missing variable
+            for perc in sorted(tmp['percentile'].dropna().unique()):
+                subset = tmp[tmp['percentile'] == perc]
 
-        for col in ['PRS_agg','PRS_sex']:
-            percentiles = pheno_df[f'percentile_{col}'].unique()
-            for perc in sorted(percentiles):
-                subset = pheno_df[pheno_df[f'percentile_{col}']==perc]
+                if len(subset) == 0:
+                    continue
+
                 if p_type == 'binary':
-                    value = subset[var].sum() / len(subset) if len(subset) > 0 else np.nan
+                    value = subset[var].sum() / len(subset)
                 else:
-                    value = subset[var].mean() if len(subset) > 0 else np.nan
+                    value = subset[var].mean()
 
                 results.append({
-                    'PRS_column': col,
+                    'PRS_column': prs_var,
                     'PRS_name': prs_name,
                     'phenotype': var,
-                    'percentile': perc,
-                    'value': value,
-                    'sex': pheno_sex if pheno_sex in ['male','female'] else 'both',
-                    'n': len(subset)
+                    'percentile': int(perc),
+                    'value': float(value),
+                    'sex': pheno_sex if pheno_sex in ['male', 'female'] else 'both',
+                    'n': int(len(subset))
                 })
+
     return pd.DataFrame(results)
 
 if __name__ == "__main__":

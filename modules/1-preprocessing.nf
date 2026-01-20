@@ -4,7 +4,6 @@ process CHECK_PRS_FILES {
     tag "check_prs_files"
     publishDir "${params.paths.output_dir}/preprocessing", mode: 'copy', pattern: "*.csv"
     publishDir "${params.paths.output_dir}/log", mode: 'copy', pattern: "*.log"
-    conda "${params.paths.envs_dir}/polygenie-pipeline.yml"
 
     input:
     path prs_metadata
@@ -15,7 +14,7 @@ process CHECK_PRS_FILES {
 
     script:
     """
-    python ${file("bin/check_prs_files.py")} \
+    python ${file("scripts/modules/check_prs_files.py")} \
         --metadata ${prs_metadata} \
         --log prs_check.log \
         --prs-dir ${workflow.projectDir} \
@@ -28,7 +27,6 @@ process CHECK_PHENOTYPE_FILES {
     tag "check_phenotypes"
     publishDir "${params.paths.output_dir}/preprocessing", mode: 'copy', pattern: "*.csv"
     publishDir "${params.paths.output_dir}/log", mode: 'copy', pattern: "*.log"
-    conda "${params.paths.envs_dir}/polygenie-pipeline.yml"
 
     input:
     path phenotype_metadata
@@ -39,7 +37,7 @@ process CHECK_PHENOTYPE_FILES {
 
     script:
     """
-    python ${file("bin/check_phenotype_files.py")} \
+    python ${file("scripts/modules/check_phenotype_files.py")} \
         --metadata ${phenotype_metadata} \
         --project-dir ${workflow.projectDir} \
         --log phenotypes_check.log \

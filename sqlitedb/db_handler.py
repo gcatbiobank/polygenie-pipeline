@@ -26,47 +26,43 @@ class DBHandler:
         except Exception as e:
             logger.exception("Query failed: %s", e)
             raise
+ 
+    def get_target_classes(self):
+        """
+        Return all distinct non-empty target_class values from the target table.
 
-    def list_tables(self):
-        """Return sqlite_master rows for tables and views."""
-        return self._query("SELECT name, type, sql FROM sqlite_master WHERE type IN ('table','view') ORDER BY name")
-
-    def table_count(self, table):
-        """Return row count for given table or None if unavailable.
-
-        This first checks sqlite_master to see if the table exists and avoids
-        raising exceptions when legacy cohort tables are not present.
+        Returns
+        -------
+        pandas.DataFrame
+            Single-column DataFrame with column 'target_class'.
+            Empty DataFrame if table does not exist or no valid classes found.
         """
         try:
-            exists = self._query("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table,))
+            # Check table existence first
+            exists = self._query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='target'"
+            )
             if exists.empty:
-                logger.debug("Table does not exist: %s", table)
-                return 0
-            df = self._query(f"SELECT COUNT(*) AS cnt FROM {table}")
-            return int(df.iloc[0]['cnt']) if not df.empty else 0
-        except Exception as e:
-            logger.debug("Could not get count for table %s: %s", table, e)
-            return None
+                logger.debug("Table does not exist: target")
+                return pd.DataFrame(columns=['target_class'])
 
-    def sample_table(self, table, limit=5):
-        """Return up to `limit` rows from `table` as a DataFrame."""
-        try:
-            exists = self._query("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table,))
-            if exists.empty:
-                logger.debug("Sample requested for missing table: %s", table)
-                return pd.DataFrame()
-            return self._query(f"SELECT * FROM {table} LIMIT ?", (limit,))
-        except Exception as e:
-            logger.debug("Could not sample table: %s (%s)", table, e)
-            return pd.DataFrame()
+            df = self._query("""
+                SELECT DISTINCT target_class
+                FROM target
+                WHERE target_class IS NOT NULL
+                AND TRIM(target_class) != ''
+                ORDER BY target_class
+            """)
 
-    def get_db_summary(self, tables=None):
-        """Return a dict of table -> count for common tables to help debugging."""
-        tbls = tables or ['gwas_metadata', 'target', 'phewas_result', 'percentile_result', 'prevalence', 'individuals', 'phenotypes']
-        summary = {}
-        for t in tbls:
-            summary[t] = self.table_count(t)
-        return summary
+            if df.empty:
+                logger.debug("No target_class values found in target table")
+
+            return df
+
+        except Exception as e:
+            logger.debug("Could not fetch target classes: %s", e)
+            return pd.DataFrame(columns=['target_class'])
+
 
     def get_gwas_names(self):
         """Return a list of GWAS labels for the dropdown."""
@@ -79,10 +75,6 @@ class DBHandler:
         if df.empty:
             return display_name
         return df.iloc[0]['name']
-
-    def get_gwas_metadata(self, display_name):
-        """Return metadata row(s) for a GWAS (searching both name and label)."""
-        return self._query("SELECT * FROM gwas_metadata WHERE label = ? OR name = ? LIMIT 1", (display_name, display_name))
 
     def get_prs_n_groups(self, prs_name):
         """Return sorted unique n_groups available for a given PRS name."""
@@ -149,6 +141,7 @@ class DBHandler:
                 p.ci_low AS CI_5,
                 p.ci_high AS CI_95,
                 p.p_value AS P,
+                p.beta AS beta,
                 NULL AS R2,
                 t.description AS description,
                 t.domain AS domain,
@@ -187,9 +180,9 @@ class DBHandler:
         import numpy as np
         def effect_sign(row):
             # prefer beta if available
-            if 'beta' in row and pd.notnull(row['beta']):
+            if row['type'] == 'continuous' and pd.notnull(row['beta']):
                 return np.sign(row['beta'])
-            if 'odds_ratio' in row and pd.notnull(row['odds_ratio']):
+            if row['type'] == 'binary' and pd.notnull(row['odds_ratio']):
                 try:
                     return np.sign(row['odds_ratio'] - 1.0)
                 except Exception:
@@ -197,109 +190,174 @@ class DBHandler:
             return 0
         df['logpxdir'] = df.apply(lambda r: (-np.log10(r['P']) * effect_sign(r)) if pd.notnull(r['P']) and r['P']>0 else None, axis=1)
         # Keep ordering consistent with app expectations
-        cols = ['GWAS','Code','Reference','Division','OR','CI_5','CI_95','P','R2','logpxdir','description','domain','class','type']
+        cols = ['GWAS','Code','Reference','Division','beta', 'odds_ratio','CI_5','CI_95','P','R2','logpxdir','description','domain','class','type']
         # ensure domain column exists even if NULL
         if 'domain' not in df.columns:
             df['domain'] = None
         return df[cols]
 
     def get_prevalences(self, prs_name, target_code):
-        sql = """
-            SELECT percentile, sex, prevalence
-            FROM prevalence
-            WHERE prs_name = ?
-            AND target_code = ?
-            ORDER BY percentile
         """
-        df = self._query(sql, (prs_name, target_code))
-        if df.empty:
-            return df
-        # pivot to columns for All/Female/Male
-        df['sex_norm'] = df['sex'].str.lower()
-        pivot = df.pivot(index='percentile', columns='sex_norm', values='prevalence').reset_index()
-        # Normalize column names to expected ones
-        pivot.rename(columns={'both':'prevalence_all','female':'prevalence_female','male':'prevalence_male'}, inplace=True)
-        # ensure columns exist
-        for c in ['prevalence_all','prevalence_female','prevalence_male']:
-            if c not in pivot.columns:
-                pivot[c] = None
-        return pivot[['percentile','prevalence_all','prevalence_female','prevalence_male']]
+        Return prevalence by PRS percentile for a given PRS and target.
 
-    def get_target_code(self, description, target_type):
-        if not description:
-            return None
-        df = self._query("SELECT target_code FROM target WHERE description = ? AND target_type = ? LIMIT 1", (description, target_type))
-        if df.empty:
-            return None
-        return df.iloc[0]['target_code']
-
-    def get_target_stats(self):
-        """Return per-target statistics suitable for the UI.
-
-        Tries to produce a table with columns: ['target_id','target_description','target_type',
-        'gender','age','bmi','self_perceived_hs','count'] by joining `phenotypes` and `individuals` if
-        those tables exist. If not present, returns a fallback DataFrame with the required column names
-        populated from the `target` table so the UI doesn't break.
+        Returns
+        -------
+        pandas.DataFrame
+            Columns: ['percentile', 'prs_column', 'sex', 'prevalence']
+            Empty DataFrame if table does not exist or no data found.
         """
+        logger.debug(
+            "get_prevalences called prs_name=%s target_code=%s",
+            prs_name, target_code
+        )
+
         try:
+            # Check table existence first
+            exists = self._query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='prevalence'"
+            )
+            if exists.empty:
+                logger.debug("Table does not exist: prevalence")
+                return pd.DataFrame(columns=['percentile', 'prs_column', 'sex', 'prevalence'])
+
             sql = """
                 SELECT
-                    t.target_code AS target_id,
-                    t.description AS target_description,
-                    t.target_type AS target_type,
-                    i.gender AS gender,
-                    i.age AS age,
-                    i.bmi AS bmi,
-                    i.self_perceived_hs AS self_perceived_hs,
-                    COUNT(*) AS count
-                FROM phenotypes p
-                JOIN individuals i ON i.entity_id = p.indiv_id
-                JOIN target t ON p.target_id = t.target_code
-                GROUP BY t.target_code, t.description, t.target_type, i.gender, i.age, i.bmi, i.self_perceived_hs
-                ORDER BY t.target_code, i.gender, i.age
+                    percentile,
+                    prs_column,
+                    sex,
+                    prevalence
+                FROM prevalence
+                WHERE prs_name = ?
+                AND target_code = ?
+                ORDER BY percentile, prs_column
             """
-            df = self._query(sql)
+
+            df = self._query(sql, (prs_name, target_code))
+            logger.debug("get_prevalences returned %d rows", len(df))
+
             return df
-        except Exception:
-            # Fallback to returning the list of targets with the expected column names
-            df = self._query("SELECT target_code AS target_id, description AS target_description, target_type FROM target ORDER BY target_code")
-            for c in ['gender', 'age', 'bmi', 'self_perceived_hs', 'count']:
-                df[c] = None
-            return df[['target_id', 'target_description', 'target_type', 'gender', 'age', 'bmi', 'self_perceived_hs', 'count']]
 
-    def get_indiv_stats(self):
-        # Read the covariates file to compute totals
-        covar = Path('data/covars.csv')
-        if not covar.exists():
-            return pd.DataFrame()
-        df = pd.read_csv(covar, sep=';', engine='python')
-        total = len(df)
-        males = len(df[df['sex'].str.lower() == 'male'])
-        females = len(df[df['sex'].str.lower() == 'female'])
-        return pd.DataFrame([{
-            'total_individuals': total,
-            'total_males': males,
-            'total_females': females
-        }])
+        except Exception as e:
+            logger.debug(
+                "Could not fetch prevalences for prs=%s target=%s: %s",
+                prs_name, target_code, e
+            )
+            return pd.DataFrame(columns=['percentile', 'prs_column', 'sex', 'prevalence'])
 
-    def get_indiv_stats_for_target(self, target_desc):
-        """Return aggregated counts for individuals having the supplied target description.
 
-        If the legacy cohort tables exist (individuals + phenotypes + target), query the DB; otherwise
-        return an empty DataFrame so callers can show a friendly fallback message.
+
+    def get_target_code(self, description, target_type):
         """
+        Return the internal target_code for a given target description and type.
+
+        Parameters
+        ----------
+        description : str
+            Human-readable target description.
+        target_type : str
+            Target type / class (e.g. 'Phecodes', 'ICD_codes', etc.)
+
+        Returns
+        -------
+        str or None
+            target_code if found, otherwise None.
+        """
+        logger.debug(
+            "get_target_code called description=%s target_type=%s",
+            description, target_type
+        )
+
+        if not description:
+            logger.debug("get_target_code: empty description provided")
+            return None
+
         try:
+            # Check table existence first
+            exists = self._query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='target'"
+            )
+            if exists.empty:
+                logger.debug("Table does not exist: target")
+                return None
+
             sql = """
-            SELECT
-                COUNT(DISTINCT i.entity_id) AS individuals_with_target,
-                SUM(CASE WHEN i.gender = 'Male' THEN 1 ELSE 0 END) AS males_with_target,
-                SUM(CASE WHEN i.gender = 'Female' THEN 1 ELSE 0 END) AS females_with_target
-            FROM individuals i
-            LEFT JOIN phenotypes p ON i.entity_id = p.indiv_id
-            LEFT JOIN target t ON p.target_id = t.target_code
-            WHERE t.description = ?
+                SELECT target_code
+                FROM target
+                WHERE description = ?
+                AND target_type = ?
+                LIMIT 1
             """
-            df = self._query(sql, (target_desc,))
-            return df
-        except Exception:
-            return pd.DataFrame()
+
+            df = self._query(sql, (description, target_type))
+
+            if df.empty:
+                logger.debug(
+                    "get_target_code: no match for description=%s target_type=%s",
+                    description, target_type
+                )
+                return None
+
+            code = df.iloc[0]['target_code']
+            logger.debug(
+                "get_target_code: found target_code=%s for description=%s target_type=%s",
+                code, description, target_type
+            )
+            return code
+
+        except Exception as e:
+            logger.debug(
+                "Could not fetch target_code for description=%s target_type=%s: %s",
+                description, target_type, e
+            )
+            return None
+
+    def get_target_type(self, target_code):
+        """
+        Return the target_type for a given target_code.
+
+        Parameters
+        ----------
+        target_code : str
+            Internal code identifying the target (e.g., ICD code, Phecode).
+
+        Returns
+        -------
+        str or None
+            The target_type if found, otherwise None.
+        """
+        logger.debug("get_target_type called with target_code=%s", target_code)
+
+        if not target_code:
+            logger.debug("get_target_type: empty target_code provided")
+            return None
+
+        try:
+            # Check table existence first
+            exists = self._query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='target'"
+            )
+            if exists.empty:
+                logger.debug("Table does not exist: target")
+                return None
+
+            sql = """
+                SELECT target_type
+                FROM target
+                WHERE target_code = ?
+                LIMIT 1
+            """
+            df = self._query(sql, (target_code,))
+
+            if df.empty:
+                logger.debug("get_target_type: no match for target_code=%s", target_code)
+                return None
+
+            target_type = df.iloc[0]['target_type']
+            logger.debug("get_target_type: found target_type=%s for target_code=%s", target_type, target_code)
+            return target_type
+
+        except Exception as e:
+            logger.debug("Could not fetch target_type for target_code=%s: %s", target_code, e)
+            return None
+
+
