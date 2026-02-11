@@ -9,6 +9,7 @@ outputs/
 scratch/
 temp/
 tmp/
+toy_dataset/
 
 # Nextflow run files
 *.nextflow*
