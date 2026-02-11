@@ -23,7 +23,7 @@ prevalence:
 
 # Percentile plot settings (for COMPUTE_PRS_PERCENTILES)
 percentile_plot:
-  groups: 10           # e.g. 10 for deciles
+  groups: 100           # e.g. 10 for deciles
   normalize: true      # whether to normalize PRS for plots
 
 # Regression run settings (for COMPUTE_PRS_REGRESSIONS)

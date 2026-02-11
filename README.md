@@ -4,8 +4,21 @@
 
 ---
 
+## 🚀 Quick Navigation
+
+**New here?** → Start with [**START_HERE.md**](START_HERE.md) to choose your learning path!
+
+- ⚡ [Quick Try (30 min)](START_HERE.md#path-1-i-want-to-try-it-quickly--30-minutes)
+- 📊 [Use Your Data (2-4 hours)](START_HERE.md#path-2-i-have-my-own-data--2-4-hours)
+- 🔐 [Learn Anonymization (1-2 hours)](START_HERE.md#path-3-im-learning-about-anonymization--1-2-hours)
+- 🔧 [Developer Guide (4+ hours)](START_HERE.md#path-4-im-a-developeradvanced-user--4-hours)
+- 📚 [All Documentation](DOCUMENTATION_INDEX.md)
+
+---
+
 ## Table of Contents
 
+* [Quick Navigation](#-quick-navigation)
 * [Features](#features)
 * [Folder Structure](#folder-structure)
 * [Installation](#installation)
@@ -14,8 +27,10 @@
 * [Building the Database](#building-the-database)
 * [Launching the App](#launching-the-app)
 * [Demo / Toy Dataset](#demo--toy-dataset)
+* [Creating a Toy Dataset](#creating-a-toy-dataset)
+* [Data Formatting & Configuration](#data-formatting--configuration)
 * [Containerization](#containerization)
-* [License](#license)
+* [License and Citation](#license-and-citation)
 
 ---
 
@@ -55,7 +70,7 @@ PolyGenie requires Python 3.10+ and the following packages:
 
 ```bash
 conda env create -f envs/environment.yml
-conda activate polygenie
+conda activate polygenie-pipeline
 ```
 
 > **Note:** For clusters, you can build a container instead of installing dependencies multiple times. See [Containerization](#containerization).
@@ -223,13 +238,71 @@ python app.py
 
 ## Demo / Toy Dataset
 
-For users who want to test PolyGenie without sensitive cohort data:
+For users who want to test PolyGenie without sensitive cohort data, a toy dataset with 500 anonymized individuals and 10 PRS can be created. See [Creating a Toy Dataset](#creating-a-toy-dataset) for details.
 
-1. A toy dataset with 500 anonymized individuals is provided in `results/preprocessing/phenotypes_toy.csv`
-2. Columns and structure match the full dataset
-3. Correlations are intentionally broken to protect privacy
+Key features:
+- 500 anonymized individuals (renamed to `ind_1` to `ind_500`)
+- 10 randomly selected PRS
+- All variables shuffled to break real associations
+- Preserves data distributions for method validation
+- Ideal for pipeline testing and development
 
-Use this dataset to explore the app and visualize plots without exposing real participant data.
+---
+
+## Creating a Toy Dataset
+
+To create an anonymized toy dataset for testing:
+
+```bash
+python scripts/create_toy_dataset.py
+```
+
+This creates a `toy_dataset/` directory containing:
+- Pre-configured pipeline inputs (500 individuals, 10 PRS)
+- Shuffled covariates, PRS, and phenotypes
+- Self-contained configuration file
+
+**For complete documentation**, see [DATASET_CREATION.md](DATASET_CREATION.md), which includes:
+- Detailed input/output specifications
+- Data flow and anonymization strategy
+- Use cases and performance metrics
+- Examples and troubleshooting
+
+**Quick start:**
+```bash
+# Create toy dataset
+python scripts/create_toy_dataset.py
+
+# Run pipeline on toy data
+cd toy_dataset
+nextflow run ../main.nf -c config/pipeline_config.yaml
+```
+
+---
+
+## Data Formatting & Configuration
+
+To run the pipeline with your own data, you need to format your data files and create a configuration file. See [DATA_FORMATTING_AND_CONFIG.md](DATA_FORMATTING_AND_CONFIG.md) for comprehensive guidance on:
+
+- **Data File Formats:** How to prepare covariates, PRS profiles, and phenotype files
+- **Metadata Files:** Specifications for PRS metadata, phenotype metadata, and GWAS metadata
+- **Configuration File:** Complete parameter reference with examples
+- **File Checklist:** Validation steps before running the pipeline
+- **Examples:** Complete worked examples for different scenarios
+- **Troubleshooting:** Common issues and solutions
+
+**Quick overview:**
+- **Covariates:** TSV file with individual IDs and covariates (age, sex, PCs, etc.)
+- **PRS Files:** One TSV file per PRS with ID and score columns
+- **Phenotypes:** CSV files with individual IDs and phenotype variables
+- **Metadata:** CSV files mapping PRS and phenotypes to their data files
+- **Config:** YAML file specifying paths and analysis parameters
+
+**Getting started:**
+1. Read [DATA_FORMATTING_AND_CONFIG.md](DATA_FORMATTING_AND_CONFIG.md)
+2. Prepare your data following the format specifications
+3. Create a configuration file using the provided examples
+4. Run the pipeline: `nextflow run main.nf -c config/your_config.yaml`
 
 ---
 

@@ -1,0 +1,46 @@
+# Toy Dataset Configuration
+# This configuration uses a small toy dataset (500 individuals, 10 PRS)
+# with shuffled variables to break associations but preserve distributions.
+
+# Paths to input files
+paths:
+  phenotype_metadata: "data/phenotype_metadata_toy.csv"
+  prs_metadata: "data/prs_metadata_toy.csv"
+  covariates: "data/covars_toy.tsv"
+  prs_file: "data/prs_scores.csv"
+  output_dir: "results_toy/"
+  envs_dir: "envs/"
+
+# Analysis parameters
+thresholds:
+  min_cases: 10
+
+prs:
+  normalize: true
+  normalization_method: "zscore"
+  check_columns: ["ID", "PRS"]  # expected columns in PRS files
+
+prevalence:
+  groups: 10
+  include_intermediates: true
+  normalize: true
+
+# Percentile plot settings (for COMPUTE_PRS_PERCENTILES)
+percentile_plot:
+  groups: 100           # e.g. 10 for deciles
+  normalize: true      # whether to normalize PRS for plots
+
+# Regression run settings (for COMPUTE_PRS_REGRESSIONS)
+# List of parameter sets to run multiple regression jobs per PRS
+regression_runs:
+  - groups: 10
+    include_intermediates: false
+    normalize: true
+    label: "deciles_no_intermediate"
+  - groups: 10
+    include_intermediates: true
+    normalize: true
+    label: "deciles_with_intermediate"
+
+covariates:
+  base: "age,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10"
