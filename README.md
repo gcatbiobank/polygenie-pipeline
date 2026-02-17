@@ -121,11 +121,11 @@ frailty,data/prs/frailty.profiles,Fried Frailty,both
 
 ### Covariates File
 
-A tab-delimited file with one row per individual. Must include an `IID` column, plus any covariates used in regression (e.g., `age`, `sex`, `PC1`–`PC10`).
+A semicolon-delimited CSV with one row per individual. Must include an `IID` column, plus any covariates used in regression (e.g., `age`, `sex`, `PC1`–`PC10`).
 
-```tsv
-IID	PC1	PC2	age	sex
-IND001	0.002	-0.023	52	female
+```csv
+IID;PC1;PC2;age;sex
+IND001;0.002;-0.023;52;female
 ```
 
 ### PRS Profile Files
