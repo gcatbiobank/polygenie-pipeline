@@ -3,7 +3,7 @@
 """
 ===============================================================================
 Script Name   : compute_percentiles.py
-Author        : Polygenie PheWAS Pipeline
+Author        : Xavier Farré
 Description   :
     Compute PRS percentiles and prevalence/mean per percentile.
     - Always compute aggregated z-score (PRS_agg) and sex-stratified z-score (PRS_sex)
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     # SKIP IF OUTPUT ALREADY EXISTS
     # -----------------------------------------------------------------
     if os.path.exists(args.output) and os.path.getsize(args.output) > 0:
-        print(f"✅ Skipping {args.prs_name}: output already exists → {args.output}")
+        print(f"Skipping {args.prs_name}: output already exists → {args.output}")
         exit(0)
 
     # Load files

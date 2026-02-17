@@ -3,7 +3,7 @@
 """
 ===============================================================================
  Script Name   : check_prs_files.py
- Author        : Polygenie PheWAS Pipeline
+ Author        : Xavier Farré
  Description   :
      This script validates the list of PRS files provided in a metadata file.
      It checks for file existence, expected columns, and summarizes how many

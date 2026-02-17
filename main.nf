@@ -16,7 +16,7 @@ import org.yaml.snakeyaml.Yaml
 params.config_file = params.config_file ?: "config/pipeline_config.yaml"
 def configFile = file(params.config_file)
 if (!configFile.exists()) {
-    exit 1, "❌ Config file not found: ${params.config_file}"
+    exit 1, "Config file not found: ${params.config_file}"
 }
 
 def yaml = new Yaml().load(configFile.text)
@@ -26,7 +26,6 @@ println "DEBUG YAML regression_runs content: ${yaml.regression_runs}"
 // Merge YAML sections into params
 params.paths         = yaml.paths
 params.thresholds    = yaml.thresholds
-params.prs           = yaml.prs
 params.prevalence    = yaml.prevalence
 params.covariates    = yaml.covariates
 params.regression_runs = yaml.regression_runs
@@ -50,8 +49,6 @@ log.info("PRS metadata          : ${params.paths.prs_metadata}")
 log.info("Phenotypes metadata   : ${params.paths.phenotype_metadata}")
 log.info("Covariates File       : ${params.paths.covariates}")
 log.info("")
-log.info("Normalize PRS         : ${params.prs.normalize}")
-log.info("Normalization Method  : ${params.prs.normalization_method}")
 log.info("Default Covariates    : ${params.covariates}")
 log.info("Number of percentiles : ${params.prevalence.percentiles}")
 log.info("")

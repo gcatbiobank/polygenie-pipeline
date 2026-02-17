@@ -1,331 +1,245 @@
 ![Polygenie](app/assets/PolyGenie.png)
 
-**PolyGenie** is a tool for polygenic risk score (PRS) analysis, PheWAS (phenome-wide association studies), and visualization of prevalence by percentile. It consists of a Nextflow pipeline for computing regressions using PRS, scripts to ingest the results into a SQLite database, and a Dash-based web application for exploration.
+*Unearthing Genetic Links with Polygenic Scores*
 
 ---
 
-## 🚀 Quick Navigation
+## Overview
 
-**New here?** → Start with [**START_HERE.md**](START_HERE.md) to choose your learning path!
+PolyGenie is a toolkit for phenome-wide association studies (PheWAS) using Polygenic Risk Scores (PRS). It combines a Nextflow pipeline for statistical analysis with an interactive web dashboard for exploring results.
 
-- ⚡ [Quick Try (30 min)](START_HERE.md#path-1-i-want-to-try-it-quickly--30-minutes)
-- 📊 [Use Your Data (2-4 hours)](START_HERE.md#path-2-i-have-my-own-data--2-4-hours)
-- 🔐 [Learn Anonymization (1-2 hours)](START_HERE.md#path-3-im-learning-about-anonymization--1-2-hours)
-- 🔧 [Developer Guide (4+ hours)](START_HERE.md#path-4-im-a-developeradvanced-user--4-hours)
-- 📚 [All Documentation](DOCUMENTATION_INDEX.md)
-
----
-
-## Table of Contents
-
-* [Quick Navigation](#-quick-navigation)
-* [Features](#features)
-* [Folder Structure](#folder-structure)
-* [Installation](#installation)
-* [Input Data](#input-data)
-* [Pipeline Usage](#pipeline-usage)
-* [Building the Database](#building-the-database)
-* [Launching the App](#launching-the-app)
-* [Demo / Toy Dataset](#demo--toy-dataset)
-* [Creating a Toy Dataset](#creating-a-toy-dataset)
-* [Data Formatting & Configuration](#data-formatting--configuration)
-* [Containerization](#containerization)
-* [License and Citation](#license-and-citation)
+- Run regression analyses across hundreds of phenotypes using PRS
+- Compute disease prevalence by PRS percentile — overall and sex-stratified
+- Explore results interactively via a Dash web application
+- Supports binary and continuous phenotypes (ICD codes, metabolites, questionnaires, and more)
 
 ---
 
-## Features
+## Implementation Example
 
-* Run regression analyses across multiple phenotypes with PRS
-* Compute prevalence by PRS percentile, overall and sex-specific
-* Explore results via an interactive web dashboard:
-
-  * PheWAS
-  * Prevalence by percentile plots (all, male, female)
-  * Table of top hits
+An example implementation using the GCAT cohort is hosted at [polygenie.igtp.cat](https://polygenie.igtp.cat/). The pipeline was run on over 100 PRS across a wide variety of phenotypes, including diseases, metabolites, and questionnaire-derived variables. The standard interface was extended to include additional cohort-specific information.
 
 ---
 
-## Folder Structure
+## Quick Start
 
-| Folder     | Purpose                                                    |
-| ---------- | ---------------------------------------------------------- |
-| `app/`     | Dash app (`app.py`) and related UI scripts                 |
-| `config/`  | Nextflow configuration files                               |
-| `data/`    | External reference data, e.g., GWAS metadata               |
-| `db/`      | SQLite database and `schema.sql`                           |
-| `envs/`    | Conda environment YAML (`environment.yml`)                 |
-| `modules/` | Nextflow modules                                           |
-| `results/` | Nextflow outputs: PRS, regressions, percentiles            |
-| `scripts/` | Helper scripts called by pipeline modules and to build the SQLite database from pipeline results |
-| `main.nf`  | Main Nextflow workflow                                     |
+### 1. Install Dependencies
 
----
-
-## Installation
-
-### Environment
-
-PolyGenie requires Python 3.10+ and the following packages:
+PolyGenie requires Python 3.10+ and Nextflow. Create the conda environment:
 
 ```bash
 conda env create -f envs/polygenie-pipeline.yml
 conda activate polygenie-pipeline
 ```
 
-> **Note:** For clusters, you can build a container instead of installing dependencies multiple times. See [Containerization](#containerization).
+### 2. Prepare Your Data
 
----
+You will need the following files before running the pipeline:
 
-## Input Data
+| File | Description |
+|------|-------------|
+| `data/phenotype_metadata.csv` | Maps each phenotype variable to its data file, type, and covariates |
+| `data/prs_metadata.csv` | Maps each PRS to its profile file and label |
+| `data/covars.tsv` | Individual-level covariates (age, sex, principal components, etc.) |
+| `data/prs/*.profiles` | One tab-delimited file per PRS with columns `ID` and `PRS` |
+| `data/phenotypes/*.csv` | Wide-format phenotype tables, one file per category |
 
-The pipeline expects the following metadata and data files:
+See the [Input Data Formats](#input-data-formats) section for detailed file specifications.
 
-### Phenotype Metadata (`data/phenotype_metadata.csv`)
-
-| Column        | Description                                          |
-| ------------- | ---------------------------------------------------- |
-| `Variable`    | Internal variable name                               |
-| `Description` | Human-readable description                           |
-| `Class`       | High-level category                                  |
-| `ClassFile`   | Path to CSV containing values                        |
-| `Domain`      | Subcategory / measurement type                       |
-| `Type`        | `continuous` or `binary`                             |
-| `Sex`         | `male`, `female`, or `both`                          |
-| `Covariates`  | Covariates to use in regression (`sex`, `age`, etc.) |
-
-**Example:**
-
-```csv
-Variable;Description;Class;ClassFile;Domain;Type;Sex;Covariates
-CALC_AVG_PESO;Weight;Questionnaire;data/phenotypes/questionnaire.csv;Measurements;continuous;both;sex
-```
-
-### PRS Metadata (`data/prs_metadata.csv`)
-
-| Column  | Description                                   |
-| ------- | --------------------------------------------- |
-| `name`  | Internal PRS name                             |
-| `path`  | Path to PRS profile file                      |
-| `label` | Human-readable label                          |
-| `sex`   | Whether it is a sex-specific PRS or not (`male`, `female`, `both`) |
-
-**Example:**
-
-```csv
-name,path,label,sex
-frailty,data/prs/frailty.profiles,Fried Frailty,both
-```
-
-### GWAS Metadata (`data/gwas_metadata.csv`)
-
-Contains information about the source GWAS:
-
-| Column                                                            | Description           |
-| ----------------------------------------------------------------- | --------------------- |
-| `name`                                                            | Internal GWAS name    |
-| `path`                                                            | Path to sumstats file |
-| `label`                                                           | Human-readable label  |
-| `n_cases`, `n_controls`, `n`                                      | Sample sizes          |
-| `population`, `sex`, `sampling`                                   | Population metadata   |
-| `prevalence`, `mean`, `sd`                                        | Trait summary stats   |
-| `source`, `sumstats_source`, `prevalence_mean_source`, `comments` | References and notes  |
-
-**Example:**
-
-```csv
-name,path,label,n_cases,n_controls,n,population,sex,sampling,prevalence,mean,sd,source,sumstats_source,prevalence_mean_source,comments
-frailty,/path/to/frailty.tsv,Fried Frailty,,,386565,EUR,both,,,0.6415,0.8657,https://doi.org/...,https://figshare.com/...,https://doi.org/...,
-```
-
-### Covariates (`data/covars.csv`)
-
-Contains individual-level covariates for regressions:
-
-| Column | Description      |
-| ------ | ---------------- |
-| `id`   | Individual ID    |
-| `sex`  | Male / Female    |
-| `age`  | Age in years     |
-| `bmi`  | BMI              |
-| ...    | Other covariates |
-
-### PRS score files
-
-Each PRS must be provided as a **tab-delimited file** with at least two columns:
-
-```text
-ID	PRS
-IND1	0.876
-```
-
-* `ID`: individual identifier (must match phenotype and covariate files)
-* `PRS`: numeric polygenic risk score
-
-Multiple PRS files are allowed.
-
----
-
-### Phenotype files
-
-Phenotypes are stored as **wide tables**, one file per phenotype class (e.g. ICD codes, questionnaires).
-
-Example (`phenotypes/icd_codes.csv`):
-
-```text
-ID;A02;A03;A04;A05;...
-IND1;0;0;1;0;...
-```
-
-* First column must be `ID`
-* Remaining columns are phenotype variables
-* Binary phenotypes should be encoded as `0/1`
-* Continuous phenotypes are allowed
-
----
-
-## Pipeline Usage
-
-Run the main Nextflow workflow:
+### 3. Run the Pipeline
 
 ```bash
-nextflow run main.nf \
-  -profile standard \
-  --paths.output_dir results \
-  --paths.envs_dir envs \
-  --prs.check_columns PRS1 PRS2 PRS3
+nextflow run main.nf -c config/your_config.yaml
 ```
 
-* The workflow will compute regressions, generate percentiles, and produce summary CSVs.
-* Outputs are written to `results/`.
-* Cluster profiles can be used for HPC environments.
+The pipeline will compute regressions, generate percentile data, and write results to the output directory specified in your config file.
 
----
-
-## Building the Database
-
-After the pipeline finishes, build the SQLite database:
+### 4. Build the Database
 
 ```bash
-python scripts/db/db_loader.py
+python scripts/db/db_loader.py config/your_config.yaml
 ```
 
-This script will:
+If no config file is provided, the script will fall back to default paths.
 
-1. Create the SQLite schema (`db/schema.sql`)
-2. Insert phenotypes, PRS manifests, and GWAS metadata
-3. Load regression results (`results/regressions/*.csv`)
-4. Load prevalence / percentile data (`results/percentiles/*.csv`)
-
-The resulting database (`db/polygenie.db`) will be used by the Dash app.
-
----
-
-## Launching the App
-
-Run the Dash application:
+### 5. Launch the Web App
 
 ```bash
 cd app
 python app.py
 ```
 
-* Open the app in a web browser: [http://127.0.0.1:8050](http://127.0.0.1:8050)
-* Select PRS, reference group, and division (e.g., 10 for deciles)
-* Click on a disease/target in the PheWAS plot to view prevalence by percentile
+Open [http://127.0.0.1:8050](http://127.0.0.1:8050) in your browser. Select a PRS and percentile grouping to explore the PheWAS plot and prevalence charts.
 
 ---
 
-## Demo / Toy Dataset
+## Project Structure
 
-For users who want to test PolyGenie without sensitive cohort data, a toy dataset with 500 anonymized individuals and 10 PRS can be created. See [Creating a Toy Dataset](#creating-a-toy-dataset) for details.
-
-Key features:
-- 500 anonymized individuals (renamed to `ind_1` to `ind_500`)
-- 10 randomly selected PRS
-- All variables shuffled to break real associations
-- Preserves data distributions for method validation
-- Ideal for pipeline testing and development
+| Folder / File | Purpose |
+|---------------|---------|
+| `main.nf` | Main Nextflow workflow entry point |
+| `app/` | Dash web application (`app.py` and UI components) |
+| `config/` | Nextflow configuration files |
+| `data/` | Input data and reference files (GWAS metadata, etc.) |
+| `db/` | SQLite database and schema definition |
+| `envs/` | Conda environment YAML |
+| `modules/` | Nextflow process modules |
+| `results/` | Pipeline outputs: regressions, percentiles, summaries |
+| `scripts/` | Helper scripts for pipeline steps and database loading |
 
 ---
 
-## Creating a Toy Dataset
+## Input Data Formats
 
-To create an anonymized toy dataset for testing:
+### Phenotype Metadata
 
-```bash
-python scripts/create_toy_dataset.py
+A semicolon-delimited CSV mapping each phenotype to its data file and analysis settings.
+
+```csv
+Variable;Description;Class;ClassFile;Domain;Type;Sex;Covariates
+BMI;Body Mass Index;Questionnaire;data/phenotypes/questionnaire.csv;Measurements;continuous;both;sex
 ```
 
-This creates a `toy_dataset/` directory containing:
-- Pre-configured pipeline inputs (500 individuals, 10 PRS)
-- Shuffled covariates, PRS, and phenotypes
-- Self-contained configuration file
+| Column | Description |
+|--------|-------------|
+| `Variable` | Internal variable name (must match the column name in the data file) |
+| `Description` | Human-readable label shown in the web app |
+| `Class` | High-level phenotype category (e.g., Questionnaire, ICD) |
+| `ClassFile` | Relative path to the data file containing this variable |
+| `Type` | `continuous` or `binary` |
+| `Sex` | `male`, `female`, or `both` |
+| `Covariates` | Comma-separated covariates to include in regression |
 
-**For complete documentation**, see [DATASET_CREATION.md](DATASET_CREATION.md), which includes:
-- Detailed input/output specifications
-- Data flow and anonymization strategy
-- Use cases and performance metrics
-- Examples and troubleshooting
+### PRS Metadata
 
-**Quick start:**
-```bash
-# Create toy dataset
-python scripts/create_toy_dataset.py
+A comma-delimited CSV mapping each PRS to its profile file.
 
-# Run pipeline on toy data
-cd toy_dataset
-nextflow run ../main.nf -c config/pipeline_config.yaml
+```csv
+name,path,label,sex
+frailty,data/prs/frailty.profiles,Fried Frailty,both
 ```
 
----
+### Covariates File
 
-## Data Formatting & Configuration
+A tab-delimited file with one row per individual. Must include an `IID` column, plus any covariates used in regression (e.g., `age`, `sex`, `PC1`–`PC10`).
 
-To run the pipeline with your own data, you need to format your data files and create a configuration file. See [DATA_FORMATTING_AND_CONFIG.md](DATA_FORMATTING_AND_CONFIG.md) for comprehensive guidance on:
-
-- **Data File Formats:** How to prepare covariates, PRS profiles, and phenotype files
-- **Metadata Files:** Specifications for PRS metadata, phenotype metadata, and GWAS metadata
-- **Configuration File:** Complete parameter reference with examples
-- **File Checklist:** Validation steps before running the pipeline
-- **Examples:** Complete worked examples for different scenarios
-- **Troubleshooting:** Common issues and solutions
-
-**Quick overview:**
-- **Covariates:** TSV file with individual IDs and covariates (age, sex, PCs, etc.)
-- **PRS Files:** One TSV file per PRS with ID and score columns
-- **Phenotypes:** CSV files with individual IDs and phenotype variables
-- **Metadata:** CSV files mapping PRS and phenotypes to their data files
-- **Config:** YAML file specifying paths and analysis parameters
-
-**Getting started:**
-1. Read [DATA_FORMATTING_AND_CONFIG.md](DATA_FORMATTING_AND_CONFIG.md)
-2. Prepare your data following the format specifications
-3. Create a configuration file using the provided examples
-4. Run the pipeline: `nextflow run main.nf -c config/your_config.yaml`
-
----
-
-## Containerization (Optional)
-
-For reproducible runs on any system:
-
-1. Build the container:
-
-```bash
-docker build -t polygenie:latest .
+```tsv
+IID	PC1	PC2	age	sex
+IND001	0.002	-0.023	52	female
 ```
 
-2. Run Nextflow using the container:
+### PRS Profile Files
 
-```bash
-nextflow run main.nf -profile docker ...
+One tab-delimited file per PRS. Individual IDs must match the covariates and phenotype files.
+
+```tsv
+ID	PRS
+IND001	0.876
+```
+
+### Phenotype Files
+
+Wide-format semicolon-delimited CSVs, one per phenotype category. Binary phenotypes should be encoded as `0`/`1`.
+
+```csv
+ID;A02;A03;BMI
+IND001;0;1;24.3
 ```
 
 ---
 
-## License and Citation
+## Configuration
 
-MIT License — see [LICENSE](LICENSE)
+Create a YAML configuration file to specify input paths and analysis parameters. A template is provided in `config/`.
 
-If you use this tool, please cite the relevant GWAS sources and acknowledge the PolyGENIE pipeline.
+The config file defines the input paths, filtering thresholds, and how the PRS will be partitioned for analysis. Under `regression_runs`, you can define multiple analysis jobs per PRS — each specifying the number of quantile groups, whether to normalize the PRS, and whether intermediate groups are pooled into the reference category (e.g. top decile vs. all others) or excluded so that only the top and bottom groups are compared.
+
+```yaml
+# Paths to input files
+paths:
+  phenotype_metadata: "data/phenotype_metadata.csv"
+  prs_metadata: "data/prs_metadata.csv"
+  covariates: "data/covars.csv"
+  output_dir: "results/"
+  envs_dir: "envs/"
+
+# Minimum number of cases in a binary phenotype to be included in the analysis
+thresholds:
+  min_cases: 10
+
+# Percentile plot settings (for COMPUTE_PRS_PERCENTILES)
+percentile_plot:
+  groups: 100      # number of bins for the prevalence-by-percentile plots
+  normalize: true  # whether to normalize PRS before plotting
+
+# Regression run settings (for COMPUTE_PRS_REGRESSIONS)
+# Each entry defines one regression job per PRS — multiple runs are supported
+regression_runs:
+  - groups: 10
+    include_intermediates: false
+    normalize: true
+    label: "deciles_no_intermediate"
+  - groups: 10
+    include_intermediates: true
+    normalize: true
+    label: "deciles_with_intermediate"
+  - groups: 4
+    include_intermediates: false
+    normalize: true
+    label: "quartiles_no_intermediate"
+  - groups: 4
+    include_intermediates: true
+    normalize: true
+    label: "quartiles_with_intermediate"
+
+# Covariates included in all regressions
+covariates:
+  base: "age,PC1,PC2,PC3,PC4,PC5,PC6,PC7,PC8,PC9,PC10"
+```
+
+Run the pipeline with your config:
+
+```bash
+nextflow run main.nf -c config/your_config.yaml
+```
+
+---
+
+## Web Application
+
+The Dash-based web app provides three main views for exploring pipeline results:
+
+- **PheWAS Plot** — Shows association strength (effect size, p-value) across all tested phenotypes for a selected PRS
+- **Prevalence by Percentile** — Displays disease prevalence across PRS percentiles, deciles, or quartiles — overall, male, and female
+- **Top Hits Table** — Sortable table of the strongest associations
+
+**To launch:**
+
+1. Run the pipeline and build the database (see [Quick Start](#quick-start))
+2. `cd app && python app.py`
+3. Open [http://127.0.0.1:8050](http://127.0.0.1:8050) in your browser
+4. Select a PRS from the dropdown and choose a percentile grouping
+5. Click any point on the PheWAS plot to view prevalence curves
+
+---
+
+## Try It: Demo Dataset
+
+Not ready with your own data? Use the built-in demo dataset to explore the pipeline immediately. It contains 500 anonymized individuals with 10 PRS profiles — all associations are randomized so no real genetic information is exposed.
+
+```bash
+# Run the pipeline with the demo dataset config
+nextflow run main.nf -c config/pipeline_config.yaml
+
+# Results will be in results/
+```
+
+> **Note:** The demo dataset is intended for testing and exploration only. All associations are randomized and it is not suitable for scientific analysis or publication.
+
+---
+
+## License & Citation
+
+PolyGenie is released under the MIT License — see [LICENSE](LICENSE) for details.
+
+If you use this tool in your research, please cite the relevant GWAS sources and acknowledge the PolyGenie pipeline.

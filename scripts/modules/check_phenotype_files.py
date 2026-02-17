@@ -3,7 +3,7 @@
 """
 ===============================================================================
  Script Name   : check_phenotype_files.py
- Author        : Polygenie PheWAS Pipeline
+ Author        : Xavier Farré
  Description   :
      Validates phenotype metadata and verifies that all expected variables
      exist in their respective ClassFile datasets. For binary variables,
@@ -26,7 +26,7 @@ from datetime import datetime
 def check_phenotype_files(metadata_path: str, output_path: str, log_path: str,  project_dir: str, min_cases=0):
     start_time = datetime.now()
     log_lines = []
-    log_lines.append(f"🔍 Checking phenotype metadata: {metadata_path}")
+    log_lines.append(f"Checking phenotype metadata: {metadata_path}")
 
     if not os.path.exists(metadata_path):
         raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
@@ -46,7 +46,7 @@ def check_phenotype_files(metadata_path: str, output_path: str, log_path: str,  
     for file, subset in meta.groupby('full_path'):
         log_lines.append(f"\nChecking file: {file}")
         if not os.path.exists(file):
-            log_lines.append(f"   ❌ File not found: {file}")
+            log_lines.append(f"   File not found: {file}")
             continue
 
         try:

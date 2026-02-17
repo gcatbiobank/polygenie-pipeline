@@ -376,9 +376,9 @@ def main():
     if results:
         df_out = pd.DataFrame(results)
         df_out.to_csv(args.output, sep=';', index=False, quoting=csv.QUOTE_ALL)
-        print(f"✅ Results written to {args.output}")
+        print(f"Results written to {args.output}")
     else:
-        print("⚠️ No valid results generated.")
+        print("No valid results generated.")
 
 
 if __name__ == "__main__":
