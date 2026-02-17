@@ -5,16 +5,39 @@ import glob
 import re
 import hashlib
 from pathlib import Path
+import yaml
+import sys
+import os
 
-# ----------------------------
-# Paths
-# ----------------------------
+# Default config path
+default_config_file = Path("config/pipeline_config.yaml")
+
+# Check if a path was supplied via command line
+if len(sys.argv) > 1:
+    config_file = Path(sys.argv[1])
+else:
+    config_file = default_config_file
+
+# Load config
+if config_file.exists():
+    with open(config_file) as f:
+        config = yaml.safe_load(f)
+        output_dir = config.get('paths', {}).get('output_dir', 'results')
+        gwas_meta_path = config.get('paths', {}).get('gwas_metadata', 'data/gwas_metadata.csv')
+else:
+    output_dir = 'results'
+    gwas_meta_path = 'data/gwas_metadata.csv'
+
+print(f"Using config: {config_file}")
+print(f"Output dir: {output_dir}")
+print(f"GWAS metadata path: {gwas_meta_path}")
+
 DB = Path("db/polygenie.db")
 SCHEMA = Path("db/schema.sql")
-RESULTS = Path("results")
+RESULTS = Path(output_dir)
 PHENO_FILE = RESULTS / "preprocessing/phenotypes_valid.csv"
 PRS_MANIFEST_FILE = RESULTS / "preprocessing/prs_present.csv"
-GWAS_META_FILE = Path("data/gwas_metadata.csv")
+GWAS_META_FILE = Path(gwas_meta_path)
 
 # ----------------------------
 # Helpers

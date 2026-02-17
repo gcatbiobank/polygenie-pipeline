@@ -69,7 +69,7 @@
 PolyGenie requires Python 3.10+ and the following packages:
 
 ```bash
-conda env create -f envs/environment.yml
+conda env create -f envs/polygenie-pipeline.yml
 conda activate polygenie-pipeline
 ```
 

@@ -4,10 +4,11 @@
 
 # Paths to input files
 paths:
-  phenotype_metadata: "toy_dataset/data/phenotype_metadata_toy.csv"
-  prs_metadata: "toy_dataset/data/prs_metadata_toy.csv"
-  covariates: "toy_dataset/data/covars_toy.tsv"
-  output_dir: "results_toy/"
+  phenotype_metadata: "data/phenotype_metadata.csv"
+  prs_metadata: "data/prs_metadata.csv"
+  covariates: "data/covars.tsv"
+  prs_file: "data/prs_scores.csv"
+  output_dir: "results/"
   envs_dir: "envs/"
 
 # Analysis parameters

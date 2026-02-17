@@ -100,8 +100,8 @@ workflow {
             def full_path = row['"full_path"']?.replaceAll('"','')
 
             def prs_file        = full_path ? file(full_path) : null
-            def prs_metadata    = file("${workflow.projectDir}/results/preprocessing/prs_present.csv")
-            def phenotype_file = file("${workflow.projectDir}/results/preprocessing/phenotypes_valid.csv")
+            def prs_metadata    = file("${workflow.projectDir}/${params.paths.output_dir}/preprocessing/prs_present.csv")
+            def phenotype_file = file("${workflow.projectDir}/${params.paths.output_dir}/preprocessing/phenotypes_valid.csv")
             def covariates_file = file("${workflow.projectDir}/${params.paths.covariates}")
 
             tuple(
@@ -133,8 +133,8 @@ workflow {
             def prs_name = row['"name"']?.replaceAll('"','')
             def full_path = row['"full_path"']?.replaceAll('"','')
             def prs_file = full_path ? file(full_path) : null
-            def prs_metadata = file("${workflow.projectDir}/results/preprocessing/prs_present.csv")
-            def phenotype_file = file("${workflow.projectDir}/results/preprocessing/phenotypes_valid.csv")
+            def prs_metadata = file("${workflow.projectDir}/${params.paths.output_dir}/preprocessing/prs_present.csv")
+            def phenotype_file = file("${workflow.projectDir}/${params.paths.output_dir}/preprocessing/phenotypes_valid.csv")
             def covariates_file = file("${workflow.projectDir}/${params.paths.covariates}")
             tuple(prs_file, prs_metadata, prs_name, phenotype_file, covariates_file)
         }

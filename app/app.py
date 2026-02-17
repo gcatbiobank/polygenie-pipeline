@@ -48,7 +48,7 @@ Y_CAP_PERCENTILE = 99
 # =========================
 
 # DB
-database_file = 'sqlitedb/polygenie.db'
+database_file = 'db/polygenie.db'
 db = DBHandler(database_file)
 
 # App
@@ -351,11 +351,11 @@ def update_phewas(prs_display_name, reference_value, division_value, tab):
             fig.add_annotation(x=xpos_val, y=row['logpxdir'], text=f"{desc}", showarrow=False, font=dict(color='black', size=12), align='center', yshift=10)
 
     # Cap y-axis
-    yvals = df['logpxdir'].abs().dropna()
-    if len(yvals) > 0:
-        ycap = max(1.0, float(np.nanpercentile(yvals, Y_CAP_PERCENTILE)))
-        y_lim = ycap * 1.2
-        fig.update_yaxes(range=[-y_lim, y_lim])
+    #yvals = df['logpxdir'].abs().dropna()
+    #if len(yvals) > 0:
+    #    ycap = max(1.0, float(np.nanpercentile(yvals, Y_CAP_PERCENTILE)))
+    #    y_lim = ycap * 1.2
+    #    fig.update_yaxes(range=[-y_lim, y_lim])
 
     fig.update_layout(
             xaxis_title='Diseases',
@@ -370,7 +370,7 @@ def update_phewas(prs_display_name, reference_value, division_value, tab):
 
     # baseline
     fig.add_shape(type='line', x0=0, x1=1, xref='paper', y0=0, y1=0, yref='y', line=dict(color='black', width=1))
-
+    fig.update_xaxes(range=[-0.5, len(df) - 0.5])
     return fig
 
 
