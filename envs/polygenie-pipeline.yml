@@ -1,0 +1,32 @@
+name: polygenie-pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # Core language
+  - python =3.11
+  - pip
+
+  # Data handling
+  - pandas >=2.2
+  - numpy
+  - scipy
+  - statsmodels
+  - pyyaml          # for reading YAML covariates if needed
+  - joblib          # for Parallel/ delayed
+  - tqdm            # progress bars
+
+  # Visualization (for debugging/plots)
+  - matplotlib
+  - seaborn
+  - plotly
+  - dash
+  - dash-bootstrap-components
+
+  # File handling and utilities
+  - openpyxl        # Excel reading/writing if needed
+  - pyarrow         # faster CSV/Parquet read/write (optional but recommended)
+  - rich            # better terminal logging (optional)
+  - click           # for structured CLI (optional)

@@ -29,7 +29,6 @@ srv/
 *.yml~
 *.yaml~
 .envrc
-envs/
 *.lock
 
 # Python caches
