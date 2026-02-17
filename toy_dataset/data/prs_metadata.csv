@@ -1,0 +1,11 @@
+name,path,label,sex
+scz,data/prs/scz.profiles,Schizophrenia,both
+asi,data/prs/asi.profiles,Age Smoking Initiation,both
+palsy,data/prs/palsy.profiles,Progressive Supranuclear Palsy,both
+restless_leg,data/prs/restless_leg.profiles,Restless legs syndrome,both
+fev1,data/prs/fev1.profiles,FEV1,both
+diet_fat,data/prs/diet_fat.profiles,Diet: Relative Fat Intake,both
+osteoarthritis,data/prs/osteoarthritis.profiles,Osteoarthritis,both
+reti_count,data/prs/reti_count.profiles,Reticulocyte count variance,both
+mono,data/prs/mono.profiles,Monocyte count variance,both
+neut_perc,data/prs/neut_perc.profiles,Neutrophil percentage of white cells variance,both
