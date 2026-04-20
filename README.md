@@ -71,6 +71,11 @@ python app.py
 
 Open [http://127.0.0.1:8050](http://127.0.0.1:8050) in your browser. Select a PRS and percentile grouping to explore the PheWAS plot and prevalence charts.
 
+The app now includes a significance threshold dropdown, allowing you to choose between:
+- Bonferroni domain-wise correction (by number of domains)
+- Bonferroni global correction (by number of codes)
+- FDR global correction (by number of codes)
+
 ---
 
 ## Project Structure
@@ -240,6 +245,6 @@ nextflow run main.nf -c config/pipeline_config.yaml
 
 ## License & Citation
 
-PolyGenie is released under the MIT License — see [LICENSE](LICENSE) for details.
+PolyGenie is released under the MIT License — see [LICENSE](LICENSE.md) for details.
 
 If you use this tool in your research, please cite the relevant GWAS sources and acknowledge the PolyGenie pipeline.

@@ -76,6 +76,12 @@ reference_options = [
 # Default division options (will be updated based on PRS when possible)
 division_options = [{'label': '4 (quartiles)', 'value': '4'}, {'label': '10 (deciles)', 'value': '10'}]
 
+significance_options = [
+    {'label': 'Bonferroni (domain-wise)', 'value': 'bonferroni_domain'},
+    {'label': 'Bonferroni (global)', 'value': 'bonferroni_global'},
+    {'label': 'FDR (global)', 'value': 'fdr_global'},
+]
+
 # =========================
 # Targe classes for tabs
 # =========================
@@ -150,6 +156,48 @@ def add_loess(fig, df, x, y, label, visible):
     )
 
 
+def compute_significance_cutoff(pvalues, method='bonferroni', alpha=ALPHA, m=None):
+    """Return a p-value cutoff for Bonferroni or FDR correction."""
+    pvalues = np.asarray(pvalues, dtype=float)
+    pvalues = pvalues[np.isfinite(pvalues)]
+    if m is None:
+        m = len(pvalues)
+
+    if m == 0:
+        return None
+
+    if method == 'fdr':
+        sorted_p = np.sort(pvalues)
+        thresholds = np.arange(1, m + 1) * alpha / m
+        valid = sorted_p <= thresholds
+        if not np.any(valid):
+            return alpha / m
+        return float(sorted_p[valid].max())
+
+    return alpha / m
+
+
+def get_significance_cutoffs(filtered_data, selection):
+    """Compute a p-value cutoff from filtered data based on the selected threshold strategy."""
+    if filtered_data.empty or 'P' not in filtered_data.columns:
+        return []
+
+    if selection == 'bonferroni_domain':
+        domain_count = filtered_data['domain'].nunique() if 'domain' in filtered_data.columns else len(filtered_data)
+        cutoff = compute_significance_cutoff(filtered_data['P'].values, method='bonferroni', m=domain_count)
+        return [('Bonferroni (domain-wise)', cutoff, domain_count)]
+
+    if selection == 'bonferroni_global':
+        cutoff = compute_significance_cutoff(filtered_data['P'].values, method='bonferroni', m=len(filtered_data))
+        return [('Bonferroni (global)', cutoff, len(filtered_data))]
+
+    if selection == 'fdr_global':
+        cutoff = compute_significance_cutoff(filtered_data['P'].values, method='fdr', m=len(filtered_data))
+        return [('FDR (global)', cutoff, len(filtered_data))]
+
+    return []
+
+
 def get_target_class_for_phewas(prs_code):
     """Choose a sensible default target class for a PRS."""
     df = db.get_target_classes_for_prs(prs_code)
@@ -199,6 +247,13 @@ app.layout = dbc.Container([
                 id='division-dropdown',
                 options=division_options,
                 value='10'
+            ),
+
+            html.P('Significance threshold'),
+            dcc.Dropdown(
+                id='significance-selection-dropdown',
+                options=significance_options,
+                value='bonferroni_domain'
             ),
         ], width=3),
 
@@ -277,9 +332,9 @@ def update_reference_options(prs_display_name):
 
 @app.callback(
     Output('phewas-graph', 'figure'),
-    [Input('disease-dropdown', 'value'), Input('reference-dropdown', 'value'), Input('division-dropdown', 'value'), Input('tabs', 'value')]
+    [Input('disease-dropdown', 'value'), Input('reference-dropdown', 'value'), Input('division-dropdown', 'value'), Input('tabs', 'value'), Input('significance-selection-dropdown', 'value')]
 )
-def update_phewas(prs_display_name, reference_value, division_value, tab):
+def update_phewas(prs_display_name, reference_value, division_value, tab, significance_selection):
     """Use the plotting code from `old/app.py` but allow tab-based selection of target class."""
     if not prs_display_name:
         return px.scatter(title='Select PRS')
@@ -337,18 +392,36 @@ def update_phewas(prs_display_name, reference_value, division_value, tab):
                                  })
 
 
-    # Bonferroni lines and annotations
-    element_count = df['class'].nunique() if 'class' in df.columns else len(df)
-    if element_count:
-        # Add Bonferroni lines
-        positive_sig, negative_sig = add_bonferroni_lines(fig, element_count, alpha=ALPHA)
+    # Threshold lines and annotations
+    sig_cutoffs = get_significance_cutoffs(df, significance_selection)
+    if sig_cutoffs:
+        label, cutoff, count = sig_cutoffs[0]
+        if cutoff is not None and cutoff > 0:
+            positive_sig = -np.log10(cutoff)
+            negative_sig = np.log10(cutoff)
+            for y in (positive_sig, negative_sig):
+                fig.add_shape(
+                    type='line',
+                    x0=0, x1=1, xref='paper',
+                    y0=y, y1=y, yref='y',
+                    line=dict(color='red', width=2, dash='dash')
+                )
+            fig.add_annotation(
+                xref='paper',
+                x=1,
+                y=positive_sig,
+                text=f"{label} ({count} tests): {cutoff:.2e}",
+                showarrow=False,
+                font=dict(color='red', size=12),
+                align='right',
+                yshift=10
+            )
 
-        outliers = df[(df['logpxdir'] < negative_sig) | (df['logpxdir'] > positive_sig)]
-        for index, row in outliers.iterrows():
-            # place annotation at numeric x position but label with human-readable description
-            xpos_val = row['xpos'] if 'xpos' in row else row[x]
-            desc = row.get('description', '')
-            fig.add_annotation(x=xpos_val, y=row['logpxdir'], text=f"{desc}", showarrow=False, font=dict(color='black', size=12), align='center', yshift=10)
+            outliers = df[(df['logpxdir'] < negative_sig) | (df['logpxdir'] > positive_sig)]
+            for index, row in outliers.iterrows():
+                xpos_val = row['xpos'] if 'xpos' in row else row[x]
+                desc = row.get('description', '')
+                fig.add_annotation(x=xpos_val, y=row['logpxdir'], text=f"{desc}", showarrow=False, font=dict(color='black', size=12), align='center', yshift=10)
 
     # Cap y-axis
     #yvals = df['logpxdir'].abs().dropna()
@@ -490,4 +563,4 @@ def update_table(disease_value, reference_value, division_value, tab):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
